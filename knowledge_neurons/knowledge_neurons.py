@@ -16,13 +16,15 @@ from functools import partial
 from transformers import PreTrainedTokenizerBase
 from .patch import *
 
+DECODER_MODEL_TYPES = ['gpt', 'llama']
+
 
 class KnowledgeNeurons:
     def __init__(
         self,
         model: nn.Module,
         tokenizer: PreTrainedTokenizerBase,
-        model_type: str = "bert",
+        model_type: str = "llama",
         device: str = None,
     ):
         self.model = model
@@ -46,6 +48,11 @@ class KnowledgeNeurons:
             self.input_ff_attr = "mlp.c_fc"
             self.output_ff_attr = "mlp.c_proj.weight"
             self.word_embeddings_attr = "transformer.wpe"
+        elif "llama" in model_type:
+            self.transformer_layers_attr = "model.layers"
+            self.input_ff_attr = "mlp.gate_proj"
+            self.output_ff_attr = "mlp.down_proj.weight"
+            self.word_embeddings_attr = "model.embed_tokens"
         else:
             raise NotImplementedError
 
@@ -82,7 +89,7 @@ class KnowledgeNeurons:
             # with autoregressive models we always want to target the last token
             mask_idx = -1
         if target is not None:
-            if "gpt" in self.model_type:
+            if self.model_type in DECODER_MODEL_TYPES:
                 target = self.tokenizer.encode(target)
             else:
                 target = self.tokenizer.convert_tokens_to_ids(target)
@@ -93,7 +100,7 @@ class KnowledgeNeurons:
             prompt, ground_truth
         )
         # for autoregressive models, we might want to generate > 1 token
-        if self.model_type == "gpt":
+        if self.model_type in DECODER_MODEL_TYPES:
             n_sampling_steps = len(target_label)
         else:
             n_sampling_steps = 1  # TODO: we might want to use multiple mask tokens even with bert models
@@ -440,7 +447,7 @@ class KnowledgeNeurons:
         )
 
         # for autoregressive models, we might want to generate > 1 token
-        if self.model_type == "gpt":
+        if self.model_type in DECODER_MODEL_TYPES:
             n_sampling_steps = len(target_label)
         else:
             n_sampling_steps = 1  # TODO: we might want to use multiple mask tokens even with bert models
@@ -449,7 +456,7 @@ class KnowledgeNeurons:
             integrated_grads = []
 
             for i in range(n_sampling_steps):
-                if i > 0 and self.model_type == "gpt":
+                if i > 0 and self.model_type in DECODER_MODEL_TYPES:
                     # retokenize new inputs
                     encoded_input, mask_idx, target_label = self._prepare_inputs(
                         prompt, ground_truth
